@@ -13,6 +13,9 @@ import shutil
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
+import requests
+import subprocess
+
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 
@@ -35,7 +38,7 @@ async def generate(ctx, prompt: str):
     t0 = time.time()
     wav = await loop.run_in_executor(executor, musicgen.generate, [prompt])
 
-    fname = "_".join([prompt.replace(" ", "_")[:50], str(seed)])
+    fname = "_".join(["small", prompt.replace(" ", "_")[:50], str(seed)])
     audio_write(f'outputs/{fname}', wav[0].cpu(), musicgen.sample_rate, strategy="loudness", loudness_compressor=True)
     print(f'saved {fname}.wav')
 
@@ -98,13 +101,10 @@ async def generate_finetuned(ctx, prompt: str, model: str):
 
     await ctx.followup.send(f"generated `{prompt}` in {round(time.time()-t0, 2)}s", file=discord.File(f'outputs/{fname}.wav'))
 
-# download finetuned model from google drive link
 @bot.command(description="Saves a finetuned state_dict.bin to use for inference")
 async def get_checkpoint(ctx, model: str, state_dict_gdrive_url: str):
-
-    loop = asyncio.get_event_loop()
-
     await ctx.defer()
+
     if os.path.isdir(f"checkpoints/{model}"):
         await ctx.followup.send(f"model `{model}` already exists, skipping download. please use a new name!")
         return
@@ -117,13 +117,17 @@ async def get_checkpoint(ctx, model: str, state_dict_gdrive_url: str):
 
     file_id = state_dict_gdrive_url.split('/')[-2]
     t0 = time.time()
-    try:
-        await loop.run_in_executor(executor, gdown.download, f'https://drive.google.com/uc?id={file_id}', file_path, False)
-    except:
-        await ctx.followup.send(f"Can't download model from url - requires a public google drive link to `state_dict.bin`")
+
+    cmd = ['gdown', f'https://drive.google.com/uc?id={file_id}', '-O', file_path]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = proc.communicate()
+
+    if b"Access denied" in stdout or b"Access denied" in stderr:
+        await ctx.followup.send(f"Can't download model from url - requires a public google drive link to `state_dict.bin`. try sharing it as \"anyone with the link can view\"")
+        await delay_msg.delete()
         return
 
-    await loop.run_in_executor(executor, shutil.copy2, 'checkpoints/compression_state_dict.bin', f'checkpoints/{model}/compression_state_dict.bin')
+    shutil.copy2('checkpoints/compression_state_dict.bin', f'checkpoints/{model}/compression_state_dict.bin')
 
     print(f'saved checkpoints/{model}')
     await ctx.followup.send(f"saved checkpoint in {round(time.time()-t0, 2)}s\nrun `/generate_finetuned prompt:prompt model:{model}`")
