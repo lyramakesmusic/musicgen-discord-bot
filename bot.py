@@ -60,7 +60,7 @@ async def generate_medium(ctx, prompt: str):
     t0 = time.time()
     wav = await loop.run_in_executor(executor, musicgen.generate, [prompt])
 
-    fname = "_".join("medium", [prompt.replace(" ", "_")[:50], str(seed)])
+    fname = "_".join(["medium", prompt.replace(" ", "_")[:50], str(seed)])
     audio_write(f'outputs/{fname}', wav[0].cpu(), musicgen.sample_rate, strategy="loudness", loudness_compressor=True)
     print(f'saved {fname}.wav')
 
